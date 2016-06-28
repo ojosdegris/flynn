@@ -97,7 +97,7 @@ func testSireniaDeploy(client controller.Client, disc *discoverd.Client, t *c.C,
 	delete(proc.Env, "SINGLETON")
 	proc.Service = d.name
 	release.Processes[procName] = proc
-	t.Assert(client.CreateRelease(release), c.IsNil)
+	t.Assert(client.CreateRelease(app.ID, release), c.IsNil)
 	t.Assert(client.SetAppRelease(app.ID, release.ID), c.IsNil)
 	oldRelease := release.ID
 
@@ -206,7 +206,7 @@ func testSireniaDeploy(client controller.Client, disc *discoverd.Client, t *c.C,
 
 	// check a deploy completes with expected cluster state changes
 	release.ID = ""
-	t.Assert(client.CreateRelease(release), c.IsNil)
+	t.Assert(client.CreateRelease(app.ID, release), c.IsNil)
 	newRelease := release.ID
 	deployment, err := client.CreateDeployment(app.ID, newRelease)
 	t.Assert(err, c.IsNil)

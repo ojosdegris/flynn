@@ -189,7 +189,7 @@ func (h *Helper) createApp(t *c.C) (*ct.App, *ct.Release) {
 			},
 		},
 	}
-	t.Assert(client.CreateRelease(release), c.IsNil)
+	t.Assert(client.CreateRelease(app.ID, release), c.IsNil)
 	t.Assert(client.SetAppRelease(app.ID, release.ID), c.IsNil)
 	return app, release
 }

@@ -210,7 +210,7 @@ func (s *CLISuite) TestScaleAll(t *c.C) {
 		Meta:        release.Meta,
 		Processes:   release.Processes,
 	}
-	t.Assert(client.CreateRelease(release), c.IsNil)
+	t.Assert(client.CreateRelease(app.id, release), c.IsNil)
 	t.Assert(client.SetAppRelease(app.id, release.ID), c.IsNil)
 
 	scale = app.flynn("scale", "echoer=2", "printer=1")
@@ -828,7 +828,7 @@ func (s *CLISuite) TestRelease(t *c.C) {
 		},
 	}
 	client := s.controllerClient(t)
-	t.Assert(client.CreateRelease(release), c.IsNil)
+	t.Assert(client.CreateRelease(app.id, release), c.IsNil)
 	t.Assert(client.SetAppRelease(app.id, release.ID), c.IsNil)
 
 	updateFile := filepath.Join(t.MkDir(), "updates.json")
@@ -1243,7 +1243,7 @@ func (s *CLISuite) TestSlugReleaseGarbageCollection(t *c.C) {
 			},
 			Meta: map[string]string{"git": "true"},
 		}
-		t.Assert(client.CreateRelease(release), c.IsNil)
+		t.Assert(client.CreateRelease(app.ID, release), c.IsNil)
 		procs := map[string]int{"app": 0}
 		if r.active {
 			procs["app"] = 1
@@ -1283,7 +1283,7 @@ func (s *CLISuite) TestSlugReleaseGarbageCollection(t *c.C) {
 	time.AfterFunc(5*time.Minute, func() { close(timeoutCh) })
 	newRelease := *lastRelease
 	newRelease.ID = ""
-	t.Assert(client.CreateRelease(&newRelease), c.IsNil)
+	t.Assert(client.CreateRelease(app.ID, &newRelease), c.IsNil)
 	t.Assert(client.DeployAppRelease(app.ID, newRelease.ID, timeoutCh), c.IsNil)
 
 	// wait for garbage collection

@@ -161,14 +161,14 @@ func dupRelease(release *ct.Release) *ct.Release {
 	}
 }
 
-func (m *migration) waitForDeployment(app string) error {
+func (m *migration) waitForDeployment(app string) (string, error) {
 	list, err := m.client.DeploymentList(app)
 	if err != nil || len(list) == 0 {
-		return err
+		return "", err
 	}
 	d := list[0]
 	if d.Status != "pending" && d.Status != "running" {
-		return nil
+		return d.AppID, nil
 	}
 
 	events := make(chan *ct.Event)
@@ -178,7 +178,7 @@ func (m *migration) waitForDeployment(app string) error {
 		ObjectTypes: []ct.EventType{ct.EventTypeDeployment},
 	}, events)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer stream.Close()
 
@@ -191,22 +191,22 @@ func (m *migration) waitForDeployment(app string) error {
 		case event := <-events:
 			var data *ct.DeploymentEvent
 			if err := json.Unmarshal(event.Data, &data); err != nil {
-				return err
+				return "", err
 			}
 			if data.Status == "complete" {
 				log.Info("deployment complete")
-				return nil
+				return d.AppID, nil
 			}
 			if data.Status == "failed" {
 				log.Error("deployment failed", "error", data.Error)
-				return errors.New(data.Error)
+				return "", errors.New(data.Error)
 			}
 		case <-timeout:
 			err := errors.New("timed out waiting for deployment")
 			log.Error(err.Error())
-			return err
+			return "", err
 		case <-m.stop:
-			return worker.ErrStopped
+			return "", worker.ErrStopped
 		}
 	}
 }
@@ -214,10 +214,11 @@ func (m *migration) waitForDeployment(app string) error {
 func (m *migration) maybeDeployController() error {
 	const appName = "controller"
 	log := m.logger.New("app.name", appName)
-	if err := m.waitForDeployment(appName); err != nil {
+	appID, err := m.waitForDeployment(appName)
+	if err != nil {
 		return err
 	}
-	release, err := m.client.GetAppRelease(appName)
+	release, err := m.client.GetAppRelease(appID)
 	if err != nil {
 		log.Error("error fetching release", "error", err)
 		return err
@@ -229,11 +230,11 @@ func (m *migration) maybeDeployController() error {
 	release = dupRelease(release)
 	release.Env["DEFAULT_ROUTE_DOMAIN"] = m.dm.Domain
 	release.Env["CA_CERT"] = m.dm.TLSCert.CACert
-	if err := m.client.CreateRelease(release); err != nil {
+	if err := m.client.CreateRelease(appID, release); err != nil {
 		log.Error("error creating release", "error", err)
 		return err
 	}
-	if err := m.client.DeployAppRelease(appName, release.ID, deployTimeout()); err != nil {
+	if err := m.client.DeployAppRelease(appID, release.ID, deployTimeout()); err != nil {
 		log.Error("error deploying release", "error", err)
 		return err
 	}
@@ -243,10 +244,11 @@ func (m *migration) maybeDeployController() error {
 func (m *migration) maybeDeployRouter() error {
 	const appName = "router"
 	log := m.logger.New("app.name", appName)
-	if err := m.waitForDeployment(appName); err != nil {
+	appID, err := m.waitForDeployment(appName)
+	if err != nil {
 		return err
 	}
-	release, err := m.client.GetAppRelease(appName)
+	release, err := m.client.GetAppRelease(appID)
 	if err != nil {
 		log.Error("error fetching release", "error", err)
 		return err
@@ -258,11 +260,11 @@ func (m *migration) maybeDeployRouter() error {
 	release = dupRelease(release)
 	release.Env["TLSCERT"] = m.dm.TLSCert.Cert
 	release.Env["TLSKEY"] = m.dm.TLSCert.PrivateKey
-	if err := m.client.CreateRelease(release); err != nil {
+	if err := m.client.CreateRelease(appID, release); err != nil {
 		log.Error("error creating release", "error", err)
 		return err
 	}
-	if err := m.client.DeployAppRelease(appName, release.ID, deployTimeout()); err != nil {
+	if err := m.client.DeployAppRelease(appID, release.ID, deployTimeout()); err != nil {
 		log.Error("error deploying release", "error", err)
 		return err
 	}
@@ -272,10 +274,11 @@ func (m *migration) maybeDeployRouter() error {
 func (m *migration) maybeDeployDashboard() error {
 	const appName = "dashboard"
 	log := m.logger.New("app.name", appName)
-	if err := m.waitForDeployment(appName); err != nil {
+	appID, err := m.waitForDeployment(appName)
+	if err != nil {
 		return err
 	}
-	release, err := m.client.GetAppRelease(appName)
+	release, err := m.client.GetAppRelease(appID)
 	if err != nil {
 		log.Error("error fetching release", "error", err)
 		return err
@@ -289,11 +292,11 @@ func (m *migration) maybeDeployDashboard() error {
 	release.Env["DEFAULT_ROUTE_DOMAIN"] = m.dm.Domain
 	release.Env["CONTROLLER_DOMAIN"] = fmt.Sprintf("controller.%s", m.dm.Domain)
 	release.Env["URL"] = fmt.Sprintf("https://dashboard.%s", m.dm.Domain)
-	if err := m.client.CreateRelease(release); err != nil {
+	if err := m.client.CreateRelease(appID, release); err != nil {
 		log.Error("error creating release", "error", err)
 		return err
 	}
-	if err := m.client.DeployAppRelease(appName, release.ID, deployTimeout()); err != nil {
+	if err := m.client.DeployAppRelease(appID, release.ID, deployTimeout()); err != nil {
 		log.Error("error deploying release", "error", err)
 		return err
 	}
