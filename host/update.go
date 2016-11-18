@@ -84,6 +84,9 @@ func (h *Host) Update(cmd *host.Command) error {
 	}
 	defer child.CloseSock()
 
+	// mark the host as shutdown so we don't serve new requests
+	h.shutdown.Store(true)
+
 	// close our listener and state DBs
 	log.Info("closing HTTP listener")
 	h.listener.Close()
@@ -130,6 +133,7 @@ func (h *Host) Update(cmd *host.Command) error {
 		}
 
 		log.Info("serving HTTP requests")
+		h.shutdown.Store(false)
 		h.ServeHTTP()
 
 		return resumeErr

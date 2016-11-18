@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ct "github.com/flynn/flynn/controller/types"
@@ -51,6 +52,8 @@ type Host struct {
 	maxJobConcurrency uint64
 
 	log log15.Logger
+
+	shutdown atomic.Value // bool
 }
 
 var ErrNotFound = errors.New("host: unknown job")
@@ -599,7 +602,14 @@ func (h *Host) ServeHTTP() {
 
 	h.volAPI.RegisterRoutes(r)
 
-	go http.Serve(h.listener, httphelper.ContextInjector("host", httphelper.NewRequestLogger(r)))
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if h.shutdown.Load().(bool) {
+			httphelper.ServiceUnavailableError(w, "host is shutting down")
+			return
+		}
+		r.ServeHTTP(w, req)
+	})
+	go http.Serve(h.listener, httphelper.ContextInjector("host", httphelper.NewRequestLogger(handler)))
 }
 
 func (h *Host) OpenDBs() error {
@@ -625,6 +635,7 @@ func (h *Host) CloseLogs() (host.LogBuffers, error) {
 }
 
 func (h *Host) Close() error {
+	h.shutdown.Store(true)
 	if h.listener != nil {
 		return h.listener.Close()
 	}

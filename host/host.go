@@ -330,6 +330,7 @@ func runDaemon(args *docopt.Args) {
 
 		maxJobConcurrency: maxJobConcurrency,
 	}
+	host.shutdown.Store(false)
 	backend.SetHost(host)
 
 	// restore the host status if set in the environment
