@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -29,6 +30,9 @@ usage: flynn cluster
        flynn cluster default [<cluster-name>]
        flynn cluster migrate-domain <domain>
        flynn cluster backup [--file <file>]
+	   flynn cluster log-sink
+	   flynn cluster log-sink add syslog <url> [<prefix>]
+	   flynn cluster log-sink remove <id>
 
 Manage Flynn clusters.
 
@@ -69,6 +73,16 @@ Commands:
 
         options:
             --file=<backup-file>  file to write backup to (defaults to stdout)
+	
+    log-sink
+        With no arguments, prints a list of registerd log-sinks for this cluster
+
+    log-sink add syslog
+        Creates a new syslog log sink with specified <url> and optionally <prefix> template.
+        Supported schemes are syslog and syslog+tls
+
+    log-sink remove
+        Removes a log sink with <id>
 
 Examples:
 
@@ -97,6 +111,8 @@ func runCluster(args *docopt.Args) error {
 		return runClusterMigrateDomain(args)
 	} else if args.Bool["backup"] {
 		return runClusterBackup(args)
+	} else if args.Bool["log-sink"] {
+		return runLogSink(args)
 	}
 
 	w := tabWriter()
@@ -410,6 +426,81 @@ func runClusterBackup(args *docopt.Args) error {
 		bar.Finish()
 	}
 	fmt.Fprintln(os.Stderr, "Backup complete.")
+
+	return nil
+}
+
+func runLogSink(args *docopt.Args) error {
+	client, err := getClusterClient()
+	if err != nil {
+		shutdown.Fatal(err)
+	}
+
+	if args.Bool["add"] {
+		switch {
+		case args.Bool["syslog"]:
+			return runLogSinkAddSyslog(args, client)
+		default:
+			return fmt.Errorf("Sink kind not supported")
+		}
+	}
+	if args.Bool["remove"] {
+		return runLogSinkRemove(args, client)
+	}
+
+	sinks, err := client.ListSinks()
+	if err != nil {
+		return err
+	}
+
+	w := tabWriter()
+	defer w.Flush()
+
+	listRec(w, "ID", "KIND", "CONFIG")
+	for _, j := range sinks {
+		listRec(w, j.ID, j.Kind, string(j.Config))
+	}
+
+	return err
+}
+
+func runLogSinkAddSyslog(args *docopt.Args, client controller.Client) error {
+	u, err := url.Parse(args.String["<url>"])
+	if err != nil {
+		return fmt.Errorf("Invalid syslog URL: %s", err)
+	}
+	switch u.Scheme {
+	case "syslog", "syslog+tls":
+	default:
+		return fmt.Errorf("Invalid syslog protocol: %s", u.Scheme)
+	}
+	// TODO(jpg) can we reasonably validate template?
+	config, _ := json.Marshal(ct.SyslogSinkConfig{
+		Prefix: args.String["<prefix>"],
+		URL:    u.String(),
+	})
+	sink := &ct.Sink{
+		Kind:   ct.SinkKindSyslog,
+		Config: config,
+	}
+	if err := client.CreateSink(sink); err != nil {
+		return err
+	}
+
+	log.Printf("Created sink %s.", sink.ID)
+
+	return nil
+}
+
+func runLogSinkRemove(args *docopt.Args, client controller.Client) error {
+	id := args.String["<id>"]
+
+	res, err := client.DeleteSink(id)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Deleted sink %s.", res.ID)
 
 	return nil
 }
