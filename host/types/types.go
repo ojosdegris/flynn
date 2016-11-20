@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flynn/flynn/host/resource"
+	"github.com/opencontainers/runc/libcontainer/configs"
 )
 
 // TagPrefix is the prefix added to tags in discoverd instance metadata
@@ -85,19 +86,22 @@ type JobResources struct {
 }
 
 type ContainerConfig struct {
-	Args        []string          `json:"args,omitempty"`
-	TTY         bool              `json:"tty,omitempty"`
-	Stdin       bool              `json:"stdin,omitempty"`
-	Data        bool              `json:"data,omitempty"`
-	Env         map[string]string `json:"env,omitempty"`
-	Mounts      []Mount           `json:"mounts,omitempty"`
-	Volumes     []VolumeBinding   `json:"volumes,omitempty"`
-	Ports       []Port            `json:"ports,omitempty"`
-	WorkingDir  string            `json:"working_dir,omitempty"`
-	Uid         *uint32           `json:"uid,omitempty"`
-	Gid         *uint32           `json:"gid,omitempty"`
-	HostNetwork bool              `json:"host_network,omitempty"`
-	DisableLog  bool              `json:"disable_log,omitempty"`
+	Args              []string           `json:"args,omitempty"`
+	TTY               bool               `json:"tty,omitempty"`
+	Stdin             bool               `json:"stdin,omitempty"`
+	Data              bool               `json:"data,omitempty"`
+	Env               map[string]string  `json:"env,omitempty"`
+	Mounts            []Mount            `json:"mounts,omitempty"`
+	Volumes           []VolumeBinding    `json:"volumes,omitempty"`
+	Ports             []Port             `json:"ports,omitempty"`
+	WorkingDir        string             `json:"working_dir,omitempty"`
+	Uid               *uint32            `json:"uid,omitempty"`
+	Gid               *uint32            `json:"gid,omitempty"`
+	HostNetwork       bool               `json:"host_network,omitempty"`
+	DisableLog        bool               `json:"disable_log,omitempty"`
+	LinuxCapabilities *[]string          `json:"linux_capabilities,omitempty"`
+	AllowedDevices    *[]*configs.Device `json:"allowed_devices,omitempty"`
+	WriteableCgroups  bool               `json:"writeable_cgroups,omitempty"`
 }
 
 // Apply 'y' to 'x', returning a new structure.  'y' trumps.
