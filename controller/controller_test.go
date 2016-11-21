@@ -676,18 +676,25 @@ func (s *S) TestProviderList(c *C) {
 }
 
 func (s *S) TestCreateSink(c *C) {
-	config, _ := json.Marshal(ct.SyslogSinkConfig{
-		URL: "syslog://example.com:514",
-	})
+	config := &ct.SyslogSinkConfig{
+		URL:    "syslog://example.com:514",
+		Prefix: "test",
+		UseIDs: true,
+	}
+	cfg, _ := json.Marshal(config)
 	in := &ct.Sink{
 		Kind:   ct.SinkKindSyslog,
-		Config: config,
+		Config: cfg,
 	}
 	c.Assert(s.c.CreateSink(in), IsNil)
 	c.Assert(in.ID, Not(Equals), "")
 	out, err := s.c.GetSink(in.ID)
 	c.Assert(err, IsNil)
-	c.Assert(out, DeepEquals, in)
+	c.Assert(out.ID, Equals, in.ID)
+	outConfig := &ct.SyslogSinkConfig{}
+	err = json.Unmarshal(out.Config, outConfig)
+	c.Assert(err, IsNil)
+	c.Assert(outConfig, DeepEquals, config)
 }
 
 func (s *S) TestGetCACertWithAuth(c *C) {

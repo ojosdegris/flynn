@@ -622,6 +622,7 @@ type Sink struct {
 type SyslogSinkConfig struct {
 	URL    string `json:"url"`
 	Prefix string `json:"template"`
+	UseIDs bool   `json:"use_ids"`
 }
 
 type LogAggregatorSinkConfig struct {

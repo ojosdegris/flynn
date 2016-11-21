@@ -461,6 +461,7 @@ type SyslogSink struct {
 	id     string
 	url    string
 	prefix string
+	useIDs bool
 
 	mtx          sync.RWMutex
 	cache        *lru.Cache
@@ -477,10 +478,7 @@ func NewSyslogSink(sm *SinkManager, info *SinkInfo) (sink *SyslogSink, err error
 		return nil, err
 	}
 	var t *template.Template
-	var cache *lru.Cache
 	if cfg.Prefix != "" {
-		// Initialize the template cache
-		cache = lru.New(1000) // TODO(jpg): Consider configurable?
 		t, err = template.New("").Parse(cfg.Prefix)
 		if err != nil {
 			return nil, err
@@ -491,7 +489,8 @@ func NewSyslogSink(sm *SinkManager, info *SinkInfo) (sink *SyslogSink, err error
 		id:         info.ID,
 		url:        cfg.URL,
 		prefix:     cfg.Prefix,
-		cache:      cache,
+		useIDs:     cfg.UseIDs,
+		cache:      lru.New(1000),
 		template:   t,
 		cursor:     info.Cursor,
 		shutdownCh: make(chan struct{}),
@@ -555,41 +554,74 @@ func parseProcID(procID []byte) (string, string) {
 
 var msgSep = []byte{' '}
 
+type cachedJob struct {
+	AppName string
+	Prefix  []byte
+}
+
 func (s *SyslogSink) Write(m message) error {
-	if s.template != nil {
-		// Lookup rendered template from cache
-		var prefix []byte
-		if cached, ok := s.cache.Get(m.Message.ProcID); ok {
-			if p, ok := cached.([]byte); ok {
-				prefix = p
-			}
-		}
-		// If not in the cache execute the template and cache the result
-		if prefix == nil {
-			jobID, _ := parseProcID(m.Message.ProcID)
-			job := s.sm.state.GetJob(jobID)
-			if job != nil && job.Job != nil {
-				var buf bytes.Buffer
-				if err := s.template.Execute(&buf, job.Job); err != nil {
-					return err
-				}
-				prefix = buf.Bytes()
-				s.cache.Add(jobID, prefix)
-			}
-		}
-		// If the generated/cached prefix isn't 0 length then modify the message body
-		if len(prefix) != 0 {
-			m.Message.Msg = bytes.Join([][]byte{prefix, m.Message.Msg}, msgSep)
+	// Lookup job in cache
+	var appName string
+	var prefix []byte
+	if cached, ok := s.cache.Get(string(m.Message.ProcID)); ok {
+		if c, ok := cached.(cachedJob); ok {
+			appName = c.AppName
+			prefix = c.Prefix
 		}
 	}
+
+	var updateCache bool
+	// Get the job name if the cache hasn't been populated yet
+	var job *host.ActiveJob
+	if appName == "" {
+		jobID, _ := parseProcID(m.Message.ProcID)
+		job = s.sm.state.GetJob(jobID)
+		if job != nil && job.Job != nil {
+			appName = job.Job.Metadata["flynn-controller.app_name"]
+			updateCache = true
+		}
+	}
+
+	// If not in the cache execute the template
+	if s.template != nil && prefix == nil {
+		if job != nil && job.Job != nil {
+			var buf bytes.Buffer
+			if err := s.template.Execute(&buf, job.Job); err != nil {
+				return err
+			}
+			prefix = buf.Bytes()
+			updateCache = true
+		}
+	}
+
+	// Update the cache with app name and prefix
+	if updateCache {
+		s.cache.Add(string(m.Message.ProcID), cachedJob{
+			AppName: appName,
+			Prefix:  prefix,
+		})
+	}
+
+	// If the generated/cached prefix isn't 0 length then modify the message body
+	if len(prefix) != 0 {
+		m.Message.Msg = bytes.Join([][]byte{prefix, m.Message.Msg}, msgSep)
+	}
+
+	// Overwrite syslog APP_NAME with controller app name unless IDs are to be used
+	if !s.useIDs {
+		m.Message.AppName = []byte(appName)
+	}
+
+	// Write to the remote syslog
 	_, err := s.conn.Write(rfc6587.Bytes(m.Message))
 	if err != nil {
 		return err
 	}
+
 	// Cursor needs to be mutex protected to prevent race when persisting to disk
 	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	s.cursor = m.HostCursor
-	s.mtx.Unlock()
 	return nil
 }
 

@@ -29,10 +29,10 @@ usage: flynn cluster
        flynn cluster remove <cluster-name>
        flynn cluster default [<cluster-name>]
        flynn cluster migrate-domain <domain>
-       flynn cluster backup [--file <file>]
-	   flynn cluster log-sink
-	   flynn cluster log-sink add syslog <url> [<prefix>]
-	   flynn cluster log-sink remove <id>
+	   flynn cluster backup [--file <file>]
+       flynn cluster log-sink
+       flynn cluster log-sink add syslog [--use-ids] <url> [<prefix>]
+       flynn cluster log-sink remove <id>
 
 Manage Flynn clusters.
 
@@ -81,6 +81,9 @@ Commands:
         Creates a new syslog log sink with specified <url> and optionally <prefix> template.
         Supported schemes are syslog and syslog+tls
 
+        options:
+            --use-ids  Use app IDs instead of app names in the syslog APP-NAME field
+
     log-sink remove
         Removes a log sink with <id>
 
@@ -101,7 +104,9 @@ func runCluster(args *docopt.Args) error {
 		return err
 	}
 
-	if args.Bool["add"] {
+	if args.Bool["log-sink"] {
+		return runLogSink(args)
+	} else if args.Bool["add"] {
 		return runClusterAdd(args)
 	} else if args.Bool["remove"] {
 		return runClusterRemove(args)
@@ -111,8 +116,6 @@ func runCluster(args *docopt.Args) error {
 		return runClusterMigrateDomain(args)
 	} else if args.Bool["backup"] {
 		return runClusterBackup(args)
-	} else if args.Bool["log-sink"] {
-		return runLogSink(args)
 	}
 
 	w := tabWriter()
@@ -474,15 +477,18 @@ func runLogSinkAddSyslog(args *docopt.Args, client controller.Client) error {
 	default:
 		return fmt.Errorf("Invalid syslog protocol: %s", u.Scheme)
 	}
-	// TODO(jpg) can we reasonably validate template?
+
 	config, _ := json.Marshal(ct.SyslogSinkConfig{
 		Prefix: args.String["<prefix>"],
 		URL:    u.String(),
+		UseIDs: args.Bool["--use-ids"],
 	})
+
 	sink := &ct.Sink{
 		Kind:   ct.SinkKindSyslog,
 		Config: config,
 	}
+
 	if err := client.CreateSink(sink); err != nil {
 		return err
 	}
